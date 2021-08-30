@@ -42,7 +42,8 @@ class matte {
     static [int32]lcm ($int1, $int2) {
         #[int32]$x = 0
         return ($int1*$int2)/[matte]::gcd($int1,$int2)
-        
+        #för att räkna flera lcm integers ex lcm(10,12,15,75)
+        #[matte]::lcm(10,[matte]::lcm(12,[matte]::lcm(15,75)))
     }
 
 }
