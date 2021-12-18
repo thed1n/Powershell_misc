@@ -1,6 +1,42 @@
-Löste det såhär via att constructa json själv.. fattar inte varför det inte fungerar med det som vi testade igår... men fuck it 🙂
-
 function New-IntuneStartmenu {
+    <#
+    .SYNOPSIS
+    Creates startmenu customization for intune
+    
+    .DESCRIPTION
+    Long description
+    
+    .PARAMETER ScriptName
+    Name of script?
+    
+    .PARAMETER XML
+    XML data as a string
+    
+    .PARAMETER base64
+    Startmenu configuration UTF-8 
+    Preconverted with [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path .\startmenu.xml -Raw -Encoding UTF8)))
+    
+    .PARAMETER path
+    Path to xml file
+    
+    .PARAMETER Description
+    Description of the policy
+    
+    .PARAMETER Displayname
+    Displayname of the policy
+    
+    .EXAMPLE
+    New-IntuneStartmenu -path .\README.md -Description 'Best shit in the world' -ScriptName 'Yolo swaggins' -Displayname 'Min fetast startmeny'
+
+    .EXAMPLE
+    New-IntuneStartmenu -xml $xmlstring -Description 'Best shit in the world' -ScriptName 'Yolo swaggins' -Displayname 'Min fetast startmeny'
+
+    .EXAMPLE
+    New-IntuneStartmenu -base64 $([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path .\startmenu.xml -Raw -Encoding UTF8)))) -Description 'Best shit in the world' -ScriptName 'Yolo swaggins' -Displayname 'Min fetast startmeny'
+    
+    .NOTES
+    General notes
+    #>
     [cmdletbinding(SupportsShouldProcess)]
     param (
         [ValidateNotNullOrEmpty()]
@@ -63,28 +99,26 @@ function New-IntuneStartmenu {
     }
     process {
 
-        $Params = @{
-            ScriptName  = $ScriptName
-            XML         = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Path "C:\users\nicahl\desktop\StartMenuLayout - Copy.xml" -Raw -Encoding UTF8)))
-            DisplayName = "TEN - Test Startmenu919"
-            Description = "Detta är min description"
+        $content = [ordered]@{
+            '@odata.type' = '#microsoft.graph.windows10GeneralConfiguration'
+            displayName = $Displayname
+            description = $Description
+            startMenuLayoutXml = $base64
+            fileName = $ScriptName
         }
-        $Json = @"
-{
-    "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
-    "displayName": "$($params.DisplayName)",
-    "description": "$($Params.Description)",
-    "startMenuLayoutXml": "$($Params.XML)",
-    "fileName": "$($Params.ScriptName)",
-}
-"@
+        write-verbose $($content|convertto-json)
+
+
         $URI = "deviceManagement/deviceConfigurations"
-        $Response = Invoke-MSGraphRequest -HttpMethod POST -Url $URI -Content $Json
+        try {$Response = Invoke-MSGraphRequest -HttpMethod POST -Url $URI -Content ($content|convertto-json) -erroraction -stop -whatif:$WhatIfPreference -debug:$DebugPreference}
+        catch {Write-Error 'ERROR: Failed to set startmenu' -ErrorAction Stop}
 
     }
 
-    end {}
+    end {
+        #ingen aning om det är detta.
+        if ($respons.responsecode -eq 200) {
+            Write-output 'Command executed successfully'
+        }
+    }
 }
-
-
-New-IntuneStartmenu -path .\README1.md
