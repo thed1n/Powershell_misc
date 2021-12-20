@@ -117,7 +117,7 @@ function New-IntuneStartmenu {
 
     end {
         #ingen aning om det är detta.
-        if ($respons.responsecode -eq 200) {
+        if ($response.responsecode -eq 200) {
             Write-output 'Command executed successfully'
         }
     }
