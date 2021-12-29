@@ -37,7 +37,7 @@ function New-IntuneStartmenu {
     .NOTES
     General notes
     #>
-    [cmdletbinding(SupportsShouldProcess)]
+    [cmdletbinding(SupportsShouldProcess,DefaultParameterSetName='Path')]
     param (
         [ValidateNotNullOrEmpty()]
         [Parameter(ValueFromPipeline = $true,
