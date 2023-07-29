@@ -30,12 +30,12 @@ function get-objectToTree {
         [int]$depth = 1000,
         [int]$cd = 0, #current Depth
         [string]$parentid = [System.Guid]::NewGuid().Guid
+        #[hashtable]$result= @{}
     )
+    #write-host "[$cd]"
     if ($cd -ge $depth) {
         return
     }
-
-
     if ($PSBoundParameters.ContainsKey('rootnode')) {
 
         if ($inputObject.psobject.properties.containskey) {
@@ -44,77 +44,105 @@ function get-objectToTree {
                 $inputObject.psobject.properties.remove($rootnode)
             }
             catch {
-                Write-Warning "Doesn't contain a property with the name [$rootnode]"
+                write-warning "Doesn't contain a property with the name [$rootnode]"
             }
         }
     }
     else { if (!$PSBoundParameters.ContainsKey('parentName')) { $rootnode = 'Object' } }
 
-    if ($cd -eq 0) {
+    #skip these
+    if ($inputObject.gettype().name -in 'RuntimeAssembly','RuntimeType','RuntimeModule','Byte','Byte[]') {return}
+
+
+    if ($cd -eq 0 -and $inputobject -isnot [System.Collections.IEnumerable] -and $inputobject -isnot [array] -and $inputobject -isnot [System.Collections.Idictionary]) {
+        write-verbose 'current depth 0'
         foreach ($property in $inputObject.psobject.Properties) {
             $guid = [System.Guid]::NewGuid().Guid
-            [node]::new($guid, $parentid, $parentName, $property.name, $property.value.gettype().name, '')
-            get-objecttotree -inputobject $property.value -parentName $property.name -depth $depth -parentid $guid -cd ($cd + 1)
+            if ($null -eq $property.name) {continue}
+            if ($null -eq $property.value) {continue}
+
+            [node]::new($guid,$parentid,$parentName,$property.name,$property.value.gettype().name,'')
+            
+            #if ('' -eq $property.value -or $null -eq $property.value) {continue}
+            if ([string]::IsNullOrEmpty($property.value)) {continue}
+            
+            
+            get-objecttotree -inputobject $property.value -parentName $property.name -depth $depth -parentid $guid -cd ($cd+1)
         }
     }
 
     try {
-        if ($inputObject.gettype() -in 'String', 'DateTime', 'TimeSpan', 'Version', 'Enum', 'Int', 'Int32') {
-            $guid = [System.Guid]::NewGuid().Guid
-            [node]::new($guid, $parentid, $parentName, $inputobject, $inputObject.gettype().name, '')
-            return
-        }
+    if ($inputObject.gettype() -in 'String', 'DateTime', 'TimeSpan', 'Version', 'Enum', 'Int', 'Int32') {
+        $guid = [System.Guid]::NewGuid().Guid
+        [node]::new($guid,$parentid,$parentName,$inputobject,$inputObject.gettype().name,'')
+        return
     }
-    catch {}
+    } catch {}
 
     if ($inputObject -is [array]) {
-
+        write-verbose 'Array'
+        #write-verbose $($inputObject -join ',')
         foreach ($value in $inputobject) {
-            if ($value.gettype() -in 'String', 'DateTime', 'TimeSpan', 'Version', 'Enum', 'Int', 'Int32') {
-                $guid = [System.Guid]::NewGuid().Guid
-                [node]::new($guid, $parentid, $parentName, $value, $value.gettype().name, '')
-            }
-            else {
-                get-objecttotree -inputobject $value -parentName $value -depth $depth -parentid $guid -cd ($cd + 1)
-            }
-           
-               
+                if ($value.gettype() -in 'String', 'DateTime', 'TimeSpan', 'Version', 'Enum', 'Int', 'Int32') {
+                    $guid = [System.Guid]::NewGuid().Guid
+                    [node]::new($guid,$parentid,$parentName,$value,$value.gettype().name,'')
+                }
+                else {
+                    if ($value.gettype() -notin 'String') {continue}
+                    get-objecttotree -inputobject $value -parentName $value -depth $depth -parentid $guid -cd ($cd+1)
+                }
+            
+                
         }
     }
 
     if ($inputobject -is [System.Collections.IDictionary]) {
-
+        Write-Verbose 'Dictionary'
         foreach ($key in $inputObject.Keys) {
 
             $keyguid = [System.Guid]::NewGuid().Guid #to enumerate keys
-            [node]::new($keyguid, $parentid, $parentName, $key, $inputObject.gettype().name, '')
+            [node]::new($keyguid, $parentid, $parentName, $key,$inputObject.gettype().name,'')
 
             foreach ($value in $inputObject.$key) {
                 if ($value.gettype() -in 'String', 'DateTime', 'TimeSpan', 'Version', 'Enum', 'Int', 'Int32') {
                     $guid = [System.Guid]::NewGuid().Guid
-                    [node]::new($guid, $keyguid, $key, $value, $value.gettype().name, '')
+                    [node]::new($guid,$keyguid,$key,$value,$value.gettype().name,'')
                 }
                 else {
-                    get-objecttotree -inputobject $value -parentName $key -depth $depth -parentid $keyguid -cd ($cd + 1)
+                    get-objecttotree -inputobject $value -parentName $key -depth $depth -parentid $keyguid -cd ($cd+1)
                 }
             }
 
         }
 
+    }
+
+    if ($inputobject -is [System.Collections.IEnumerable] -and $inputobject -isnot [array] -and $inputobject -isnot [System.Collections.Idictionary]){
+        write-verbose 'ienmuerable'
+        foreach ($value in $inputobject) {
+            if ($value.gettype() -in 'String', 'DateTime', 'TimeSpan', 'Version', 'Enum', 'Int', 'Int32') {
+                $guid = [System.Guid]::NewGuid().Guid
+                [node]::new($guid,$parentid,$parentName,$value,$value.gettype().name,'')
+            }
+            else {
+                if ($value.gettype() -notin 'String') {continue}
+                get-objecttotree -inputobject $value -parentName $value -depth $depth -parentid $guid -cd ($cd+1)
+            }
+    }
 
     }
 
-    if ($cd -ge 1 -and $inputobject -isnot [array] -and $inputobject -isnot [System.Collections.IDictionary]) {
-
+    if ($cd -ge 1 -and $inputobject -isnot [array] -and $inputobject -isnot [System.Collections.IDictionary] -and $inputObject -isnot [System.Collections.IEnumerable]) {
+        write-verbose 'all else'
         foreach ($property in $inputObject.psobject.Properties) {
             $guid = [System.Guid]::NewGuid().Guid
-            [node]::new($guid, $parentid, $parentName, $property.name, $property.value.gettype().name, '')
-            get-objecttotree -inputobject $property.value -parentName $property.name -depth $depth -parentid $guid -cd ($cd + 1)
+            if ($null -eq $property.name) {continue}
+            if ($null -eq $property.value) {continue}
+            [node]::new($guid,$parentid,$parentName,$property.name,$property.value.gettype().name,'')
+            get-objecttotree -inputobject $property.value -parentName $property.name -depth $depth -parentid $guid -cd ($cd+1)
         }
-       
+        
     }
-
-
 
 }
 
@@ -135,18 +163,10 @@ $tst = [pscustomobject]@{
     }
 }
 
-get-objecttotree -inputobject $tst -rootnode tst -parentName tst -depth 100
-$inputobject = $tst
+$testing123 = get-objecttotree -inputobject $tst -rootnode tst -parentName tst -depth 100
 
-$d = $tst.psobject.Properties | Select-Object -First 1
-$d.Value.gettype() -in 'String', 'DateTime', 'TimeSpan', 'Version', 'Enum', 'Int', 'Int32'
-$inputobject = $tst
 
 $testing123 | ForEach-Object {
     '{0}[{1}]-->{2}[{3}]' -f $psitem.parentid, $psitem.parent, $psitem.id, $psitem.child
 } | Set-Clipboard
 
-$ca | ForEach-Object {
-    '{0}[{1}]-->{2}[{3}]' -f $psitem.parentid, $psitem.parent, $psitem.id, $psitem.child
-} | Set-Clipboard
-$ad = get-aduser pstomhej -properties *
