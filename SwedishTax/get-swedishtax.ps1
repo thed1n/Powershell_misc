@@ -54,7 +54,24 @@ function Get-SwedishTax {
         [ValidatePattern('^2\d{3}$')]
         [string]$year = [datetime]::Now.Year
     )
-
+    Begin {
+        Function Get-TaxRegex {
+            param (
+                [Parameter(ValueFromPipeline)]
+                [Int32]$Salary
+            )
+            process {
+                $searchSalaryLow = ($Salary - 2).tostring() #To go from 30000 to 29998 for example to search that range this is to fit in with how its aligned in the data.
+            switch ($searchSalaryLow.Length) {
+                5 { $searchSalaryLow = $searchSalaryLow -replace '\d{3}$', '\d{3,}'; break }
+                4 { $searchSalaryLow = $searchSalaryLow -replace '\d{2}$', '\d{2,}'; break }
+                3 { $searchSalaryLow = $searchSalaryLow -replace '\d{1}$', '\d{1,}'; break }
+                default { $searchSalaryLow = '\d{6,}' }
+            }
+            return $searchSalaryLow
+            }
+        }
+    }
     Process {
         if ( $year -as [int32] -gt  [datetime]::Now.Year -as [int32]) {
             Throw 'Year is greater then current!'
@@ -64,19 +81,25 @@ function Get-SwedishTax {
         #To be taxed with
         $SalaryWithBenifit = $newSalary + $BenefitValue
 
-        $searchSalaryLow = ($SalaryWithBenifit - 2).tostring() #To go from 30000 to 29998 for example to search that range this is to fit in with how its aligned in the data.
-        switch ($searchSalaryLow.Length) {
-            5 { $searchSalaryLow = $searchSalaryLow -replace '\d{3}$', '\d{3,}'; break }
-            4 { $searchSalaryLow = $searchSalaryLow -replace '\d{2}$', '\d{2,}'; break }
-            3 { $searchSalaryLow = $searchSalaryLow -replace '\d{1}$', '\d{1,}'; break }
-            default { $searchSalaryLow = '\d{6,}' }
-        }
+        $searchSalaryLow = $SalaryWithBenifit | Get-TaxRegex
         $apiUrl = 'tabellnr={0}&år={2}&inkomst fr.o.m.={1}&_limit=40' -f $Table, $searchSalaryLow, $year
-    
         $searchApiUrl = 'https://skatteverket.entryscape.net/rowstore/dataset/88320397-5c32-4c16-ae79-d36d95b17b95?' + $apiUrl
 
+        if (($newSalary -ne $Salary) -or ($SalaryWithBenifit -ne $Salary)) {
+            $searchOriginalSalary = $salary | Get-TaxRegex
+            $apiUrlOrg = 'tabellnr={0}&år={2}&inkomst fr.o.m.={1}&_limit=40' -f $Table, $searchOriginalSalary , $year
+            $searchApiUrlOrg = 'https://skatteverket.entryscape.net/rowstore/dataset/88320397-5c32-4c16-ae79-d36d95b17b95?' + $apiUrlOrg
+        }
+    
         #Since it should be easy no failiure handling atm.
-        $apiResult = Invoke-RestMethod -Uri $searchApiUrl
+        if ($searchApiUrlOrg) {
+            $apiResult = @(
+                Invoke-RestMethod -Uri $searchApiUrl
+                Invoke-RestMethod -Uri $searchApiUrlOrg
+            )
+        } else {
+            $apiResult = Invoke-RestMethod -Uri $searchApiUrl
+        }
 
         $formatTaxTable = $apiresult.results | ForEach-Object {
             if ($_.'inkomst fr.o.m.' -ge '846401') {
@@ -99,7 +122,11 @@ function Get-SwedishTax {
         $SalaryByTable = $formatTaxTable | Group-Object -AsHashTable -Property Tabell
 
     
-        $tax = ($SalaryByTable[$Table] | Where-Object { $SalaryWithBenifit -ge $_.LonLag -and $SalaryWithBenifit -le $_.LonHog }).Skatt
+        $tax = ($SalaryByTable[$Table] | Where-Object { $SalaryWithBenifit -ge $_.LonLag -and $SalaryWithBenifit -le $_.LonHog }).Skatt | Select-Object -first 1
+        if ($BenefitValue -gt 1 -or $SalaryDeduction -gt 1 ) {
+            $baseTax = ($SalaryByTable[$Table] | Where-Object { $Salary -ge $_.LonLag -and $Salary -le $_.LonHog }).Skatt | Select-Object -first 1
+        }
+
 
         [PSCustomObject]@{
             Salary          = $newSalary
@@ -110,6 +137,7 @@ function Get-SwedishTax {
             Divisor94       = [Math]::round($salary / 94, 2, 1)
             Divisor72       = [Math]::round($salary / 72, 2, 1)
             SalaryWithoutDeductions = $salary
+            SalaryAfterTaxOriginal = $(if ($basetax) {$(if ($basetax -gt 80) { $Salary - $basetax } else { $Salary * (1 - ($basetax / 100)) } )})
             Year = $year
         }
 
